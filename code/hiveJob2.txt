@@ -1,0 +1,94 @@
+SELECT *
+FROM (
+  WITH cars_with_fascia AS (
+    SELECT
+      city,
+      year,
+      daysonmarket,
+      description,
+      CASE
+        WHEN price < 20000 THEN 'bassa'
+        WHEN price <= 50000 THEN 'media'
+        ELSE 'alta'
+      END AS fascia
+    FROM used_cars_FULLx5
+    WHERE city IS NOT NULL AND year IS NOT NULL AND price IS NOT NULL
+  ),
+
+  exploded_words AS (
+    SELECT
+      city,
+      year,
+      fascia,
+      daysonmarket,
+      word
+    FROM (
+      SELECT *
+      FROM cars_with_fascia
+      LATERAL VIEW explode(split(lower(description), '\\W+')) exploded_table AS word
+    ) tmp
+    WHERE word IS NOT NULL AND LENGTH(word) > 1
+  ),
+
+  word_ranks AS (
+    SELECT
+      city,
+      year,
+      fascia,
+      word,
+      COUNT(*) as freq,
+      ROW_NUMBER() OVER (PARTITION BY city, year, fascia ORDER BY COUNT(*) DESC) as rnk
+    FROM exploded_words
+    GROUP BY city, year, fascia, word
+  ),
+
+  top_words AS (
+    SELECT city, year, fascia, collect_list(word) as top3_words
+    FROM word_ranks
+    WHERE rnk <= 3
+    GROUP BY city, year, fascia
+  ),
+
+  aggregated_stats AS (
+    SELECT
+      city,
+      year,
+      fascia,
+      COUNT(*) AS num_auto,
+      ROUND(AVG(daysonmarket), 1) AS avg_days
+    FROM cars_with_fascia
+    GROUP BY city, year, fascia
+  ),
+
+  final_table AS (
+    SELECT
+      s.city,
+      s.year,
+      s.fascia,
+      s.num_auto,
+      s.avg_days,
+      CONCAT_WS(' ', w.top3_words) as top3_terms
+    FROM aggregated_stats s
+    LEFT JOIN top_words w
+    ON s.city = w.city AND s.year = w.year AND s.fascia = w.fascia
+  )
+
+  SELECT
+    city,
+    year,
+
+    MAX(CASE WHEN fascia = 'bassa' THEN num_auto END) AS num_auto_fascia_bassa,
+    MAX(CASE WHEN fascia = 'bassa' THEN avg_days END) AS avg_days_fascia_bassa,
+    MAX(CASE WHEN fascia = 'bassa' THEN top3_terms END) AS top3_term_fascia_bassa,
+
+    MAX(CASE WHEN fascia = 'media' THEN num_auto END) AS num_auto_fascia_media,
+    MAX(CASE WHEN fascia = 'media' THEN avg_days END) AS avg_days_fascia_media,
+    MAX(CASE WHEN fascia = 'media' THEN top3_terms END) AS top3_term_fascia_media,
+
+    MAX(CASE WHEN fascia = 'alta' THEN num_auto END) AS num_auto_fascia_alta,
+    MAX(CASE WHEN fascia = 'alta' THEN avg_days END) AS avg_days_fascia_alta,
+    MAX(CASE WHEN fascia = 'alta' THEN top3_terms END) AS top3_term_fascia_alta
+
+  FROM final_table
+  GROUP BY city, year
+) result;

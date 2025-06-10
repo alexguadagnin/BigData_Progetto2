@@ -1,0 +1,21 @@
+SELECT
+  make_name,
+  model_name,
+  COUNT(*) AS num_auto,
+  MIN(CAST(price AS FLOAT)) AS min_price,
+  MAX(CAST(price AS FLOAT)) AS max_price,
+  ROUND(AVG(CAST(price AS FLOAT)), 2) AS avg_price,
+  COLLECT_SET(year) AS years_present
+FROM
+  used_cars_FULL
+WHERE
+  make_name IS NOT NULL
+  AND model_name IS NOT NULL
+  AND price RLIKE '^[0-9]+(\\.[0-9]+)?'
+  AND year IS NOT NULL
+GROUP BY
+  make_name,
+  model_name
+ORDER BY
+  make_name,
+  model_name;
